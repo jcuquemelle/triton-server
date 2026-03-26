@@ -1814,7 +1814,18 @@ def create_docker_build_script(script_name, container_install_dir, container_ci_
                 runargs += ["--memory", FLAGS.container_memory]
             runargs += ["-v", "\\\\.\\pipe\\docker_engine:\\\\.\\pipe\\docker_engine"]
         else:
-            runargs += ["-v", "/var/run/docker.sock:/var/run/docker.sock"]
+            docker_host = os.environ.get("DOCKER_HOST")
+            if docker_host:
+                # when installing rootless mode, Docker advises to export
+                # DOCKER_HOST=unix:///run/user/<user_id>/docker.sock
+                # This env var is taken into account when using docker, but we must mount
+                # the socket inside the main container if we want to do docker in docker
+                runargs += ["-e", f"DOCKER_HOST={docker_host}"]
+                docker_socket = docker_host.split("unix://")[1]
+            else:
+                docker_socket = "/var/run/docker.sock"
+
+            runargs += ["-v", f"{docker_socket}:{docker_socket}"]
             if FLAGS.use_user_docker_config:
                 if os.path.exists(FLAGS.use_user_docker_config):
                     runargs += [
