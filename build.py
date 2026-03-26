@@ -92,6 +92,12 @@ OVERRIDE_BACKEND_CMAKE_FLAGS = {}
 
 THIS_SCRIPT_DIR = os.path.dirname(os.path.abspath(getsourcefile(lambda: 0)))
 
+# Parent directory of the server repo on the host, set when
+# --prefer-local-repos is used.  Mounted at LOCAL_REPOS_CONTAINER_MOUNT
+# inside the build container.
+LOCAL_REPOS_HOST_PARENT = None
+LOCAL_REPOS_CONTAINER_MOUNT = "/local_repos"
+
 
 def log(msg, force=False):
     if force or not FLAGS.quiet:
@@ -307,10 +313,24 @@ class BuildScript:
 
     def gitclone(self, repo, tag, subdir, org):
         clone_dir = subdir
+
         if not FLAGS.no_force_clone:
             self.rmdir(clone_dir)
 
-        if target_platform() == "windows":
+        # When --prefer-local-repos is active, check at runtime whether the
+        # repo exists in the mounted parent directory and copy it instead of
+        # cloning.  Falls back to git clone if not found locally.
+        if FLAGS.prefer_local_repos:
+            if FLAGS.no_container_build:
+                local_base = LOCAL_REPOS_HOST_PARENT
+            else:
+                local_base = LOCAL_REPOS_CONTAINER_MOUNT
+            local_path = os.path.join(local_base, repo)
+            self.cmd(f"if [[ -d {local_path} ]]; then")
+            self.cmd(f"  echo 'prefer-local-repos: copying {repo} from {local_path}'")
+            self.cmd(f"  cp -r {local_path} {subdir}")
+            self.cmd(f"elif [[ ! -e {clone_dir} ]]; then")
+        elif target_platform() == "windows":
             self.cmd(f"if (-Not (Test-Path -Path {clone_dir})) {{")
         else:
             self.cmd(f"if [[ ! -e {clone_dir} ]]; then")
@@ -403,7 +423,7 @@ def cmake_backend_extra_args(backend):
 
 
 def cmake_repoagent_arg(name, type, value):
-    # For now there is no override for repo-agents
+    # For now there is now override for repo-agents
     if type is None:
         type = ""
     else:
@@ -1835,6 +1855,10 @@ def create_docker_build_script(script_name, container_install_dir, container_ci_
                         ),
                     ]
 
+        # Mount the parent directory of the server repo when --prefer-local-repos is used
+        if LOCAL_REPOS_HOST_PARENT:
+            runargs += ["-v", f"{LOCAL_REPOS_HOST_PARENT}:{LOCAL_REPOS_CONTAINER_MOUNT}:ro"]
+
         runargs += ["tritonserver_buildbase"]
 
         if target_platform() == "windows":
@@ -2674,6 +2698,16 @@ if __name__ == "__main__":
         help="Do not create fresh clones of repos that have already been cloned.",
     )
     parser.add_argument(
+        "--prefer-local-repos",
+        action="store_true",
+        default=False,
+        help="Look for repo directories next to the server repo (sibling directories) "
+        "and use them instead of cloning from GitHub. For example, if "
+        "onnxruntime_backend/ exists next to server/, it will be mounted "
+        "into the build container and copied into the build tree. Repos not "
+        "found locally fall back to git clone from --github-organization.",
+    )
+    parser.add_argument(
         "--extra-core-cmake-arg",
         action="append",
         required=False,
@@ -3014,6 +3048,13 @@ if __name__ == "__main__":
         components[parts[0]] = parts[1]
     for c in components:
         log('component "{}" at tag/branch "{}"'.format(c, components[c]))
+
+    # When --prefer-local-repos is set, record the parent directory of the
+    # server repo so that gitclone() can check at runtime whether a sibling
+    # directory exists and copy it instead of cloning from GitHub.
+    if FLAGS.prefer_local_repos:
+        LOCAL_REPOS_HOST_PARENT = os.path.abspath(os.path.dirname(THIS_SCRIPT_DIR))
+        log('prefer-local-repos: local repos directory is {}'.format(LOCAL_REPOS_HOST_PARENT))
 
     # Set the build, install, and cmake directories to use for the
     # generated build scripts and Dockerfiles. If building without
