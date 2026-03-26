@@ -776,6 +776,17 @@ def onnxruntime_cmake_args(images, library_paths):
         )
     )
 
+    # Forward minimum compute capability so that gen_ort_dockerfile.py
+    # can filter the CUDA architectures built into ORT.
+    cargs.append(
+        cmake_backend_arg(
+            "onnxruntime",
+            "TRITON_MIN_COMPUTE_CAPABILITY",
+            None,
+            FLAGS.min_compute_capability,
+        )
+    )
+
     return cargs
 
 
