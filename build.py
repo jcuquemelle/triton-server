@@ -765,6 +765,17 @@ def onnxruntime_cmake_args(images, library_paths):
                 )
             )
 
+    # Forward build parallelism so that gen_ort_dockerfile.py can limit
+    # the number of jobs used when compiling ORT from source.
+    cargs.append(
+        cmake_backend_arg(
+            "onnxruntime",
+            "TRITON_BUILD_PARALLEL",
+            None,
+            FLAGS.build_parallel,
+        )
+    )
+
     return cargs
 
 
