@@ -580,6 +580,10 @@ def backend_cmake_args(images, components, be, install_dir, library_paths):
 
     if be == "onnxruntime":
         args = onnxruntime_cmake_args(images, library_paths)
+        if "onnxruntime" in FLAGS.reuse_docker_image:
+            args.append(cmake_backend_arg(be, "TRITON_ORT_SKIP_DOCKER_BUILD", "BOOL", "ON"))
+        if "custom_label_encoder" in FLAGS.reuse_docker_image:
+            args.append(cmake_backend_arg(be, "TRITON_CUSTOM_LABEL_ENCODER_SKIP_DOCKER_BUILD", "BOOL", "ON"))
     elif be == "openvino":
         args = openvino_cmake_args()
     elif be == "python":
@@ -1823,7 +1827,8 @@ def create_docker_build_script(script_name, container_install_dir, container_ci_
         baseargs += ["."]
 
         docker_script.cwd(THIS_SCRIPT_DIR)
-        docker_script.cmd(baseargs, check_exitcode=True)
+        if "buildbase" not in FLAGS.reuse_docker_image:
+            docker_script.cmd(baseargs, check_exitcode=True)
 
         #
         # Build...
@@ -2696,6 +2701,16 @@ if __name__ == "__main__":
         help='Include specified backend in build as <backend-name>[:<repo-tag>]. If <repo-tag> starts with "pull/" then it refers to a pull-request reference, otherwise <repo-tag> indicates the git tag/branch to use for the build. If the version is non-development then the default <repo-tag> is the release branch matching the container version (e.g. version YY.MM -> branch rYY.MM); otherwise the default <repo-tag> is "main" (e.g. version YY.MMdev -> branch main).',
     )
     parser.add_argument(
+        "--reuse-docker-image",
+        action="append",
+        required=False,
+        metavar="BACKEND",
+        help="Reuse the existing local Docker image for the given backend instead of rebuilding it. "
+             "The image must already exist in the local Docker store. "
+             "Currently supported: onnxruntime, custom_label_encoder, buildbase. "
+             "Can be specified multiple times.",
+    )
+    parser.add_argument(
         "--repo-tag",
         action="append",
         required=False,
@@ -2853,6 +2868,8 @@ if __name__ == "__main__":
         FLAGS.extra_backend_cmake_arg = []
     if FLAGS.build_secret is None:
         FLAGS.build_secret = []
+    if FLAGS.reuse_docker_image is None:
+        FLAGS.reuse_docker_image = []
 
     FLAGS.boost_url = os.getenv(
         "TRITON_BOOST_URL",
