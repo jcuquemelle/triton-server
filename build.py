@@ -98,6 +98,10 @@ THIS_SCRIPT_DIR = os.path.dirname(os.path.abspath(getsourcefile(lambda: 0)))
 LOCAL_REPOS_HOST_PARENT = None
 LOCAL_REPOS_CONTAINER_MOUNT = "/local_repos"
 
+# Container-side path where pre-built ORT artifacts are mounted when
+# --ort-artifacts is used with a Docker build.
+ORT_ARTIFACTS_CONTAINER_MOUNT = "/ort_artifacts"
+
 
 def log(msg, force=False):
     if force or not FLAGS.quiet:
@@ -790,6 +794,22 @@ def onnxruntime_cmake_args(images, library_paths):
             FLAGS.min_compute_capability,
         )
     )
+
+    if FLAGS.ort_artifacts:
+        # When building inside Docker the artifacts are mounted at a fixed
+        # container path; when building without Docker use the host path.
+        if FLAGS.no_container_build:
+            ort_artifacts_path = os.path.abspath(FLAGS.ort_artifacts)
+        else:
+            ort_artifacts_path = ORT_ARTIFACTS_CONTAINER_MOUNT
+        cargs.append(
+            cmake_backend_arg(
+                "onnxruntime",
+                "TRITON_ONNXRUNTIME_ARTIFACTS_PATH",
+                "PATH",
+                ort_artifacts_path,
+            )
+        )
 
     return cargs
 
@@ -1886,6 +1906,13 @@ def create_docker_build_script(script_name, container_install_dir, container_ci_
         if LOCAL_REPOS_HOST_PARENT:
             runargs += ["-v", f"{LOCAL_REPOS_HOST_PARENT}:{LOCAL_REPOS_CONTAINER_MOUNT}:ro"]
 
+        # Mount pre-built ORT artifacts read-only when --ort-artifacts is used
+        if FLAGS.ort_artifacts:
+            runargs += [
+                "-v",
+                f"{os.path.abspath(FLAGS.ort_artifacts)}:{ORT_ARTIFACTS_CONTAINER_MOUNT}:ro",
+            ]
+
         runargs += ["tritonserver_buildbase"]
 
         if target_platform() == "windows":
@@ -2132,6 +2159,7 @@ def backend_build(
     cmake_script.cmake(
         backend_cmake_args(images, components, be, repo_install_dir, library_paths)
     )
+
     cmake_script.makeinstall()
 
     if be == "tensorrtllm":
@@ -2385,16 +2413,28 @@ def enable_all():
             "repeat",
             "onnxruntime",
             "python",
-            "dali",
+       #     "dali",
             "pytorch",
-            "openvino",
-            "fil",
+       #     "openvino",
+       #     "fil",
             "tensorrt",
         ]
         all_repoagents = ["checksum"]
-        all_caches = ["local", "redis"]
-        all_filesystems = ["gcs", "s3", "azure_storage"]
-        all_endpoints = ["http", "grpc", "sagemaker", "vertex-ai"]
+        all_caches = [
+            "local",
+        #    "redis"
+            ]
+        all_filesystems = [
+            #"gcs",
+            "s3",
+            #"azure_storage"
+            ]
+        all_endpoints = [
+            "http",
+            "grpc",
+            #"sagemaker",
+            #"vertex-ai"
+            ]
 
         FLAGS.enable_logging = True
         FLAGS.enable_stats = True
@@ -2797,6 +2837,15 @@ if __name__ == "__main__":
         required=False,
         default=DEFAULT_TRITON_VERSION_MAP["ort_openvino_version"],
         help="This flag sets the OpenVino version for Triton Inference Server to be built. Default: the latest supported version.",
+    )
+    parser.add_argument(
+        "--ort-artifacts",
+        type=str,
+        required=False,
+        default=None,
+        help="Path to a pre-built ORT artifacts directory produced by "
+             "onnxruntime_backend/tools/build_ort.py --artifacts-out. When set, all "
+             "Docker ORT build operations are skipped and this directory is used directly.",
     )
     parser.add_argument(
         "--standalone-openvino-version",
