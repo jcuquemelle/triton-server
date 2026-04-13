@@ -811,6 +811,11 @@ def onnxruntime_cmake_args(images, library_paths):
             )
         )
 
+    if FLAGS.enable_custom_label_encoder:
+        cargs.append(
+            cmake_backend_enable("onnxruntime", "TRITON_ENABLE_CUSTOM_LABEL_ENCODER", True)
+        )
+
     return cargs
 
 
@@ -2414,7 +2419,7 @@ def enable_all():
             "onnxruntime",
             "python",
        #     "dali",
-            "pytorch",
+       #     "pytorch",
        #     "openvino",
        #     "fil",
             "tensorrt",
@@ -2701,6 +2706,13 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--enable-gpu", action="store_true", required=False, help="Enable GPU support."
+    )
+    parser.add_argument(
+        "--enable-custom-label-encoder",
+        action="store_true",
+        required=False,
+        help="Build the custom CUDA LabelEncoder op and install it alongside the ORT backend "
+             "(sets TRITON_ENABLE_CUSTOM_LABEL_ENCODER=ON). Requires --backend onnxruntime.",
     )
     parser.add_argument(
         "--enable-mali-gpu",
